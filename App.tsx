@@ -6,11 +6,14 @@ import { ThankYou } from './components/ThankYou';
 export default function App() {
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
     const [answers, setAnswers] = useState<{ [key: number]: string[] }>({});
+    const [formData, setFormData] = useState<{ [key: string]: string }>({ name: '', phone: '' });
     const [isQuizCompleted, setIsQuizCompleted] = useState(false);
     const [isFadingOut, setIsFadingOut] = useState(false);
 
     const currentQuestion = QUIZ_DATA[currentQuestionIndex];
-    const selectedOptions = currentQuestion ? answers[currentQuestion.id] || [] : [];
+    const selectedOptions = currentQuestion && currentQuestion.type === 'selection' 
+        ? answers[currentQuestion.id] || [] 
+        : [];
 
     const handleOptionToggle = (option: string) => {
         setAnswers(prevAnswers => {
@@ -25,6 +28,13 @@ export default function App() {
         });
     };
 
+    const handleFormChange = (name: string, value: string) => {
+        setFormData(prev => ({
+            ...prev,
+            [name]: value
+        }));
+    };
+
     const handleNextQuestion = () => {
         setIsFadingOut(true);
         setTimeout(() => {
@@ -34,13 +44,27 @@ export default function App() {
                 setIsQuizCompleted(true);
                 
                 const payload = {
-                    responses: QUIZ_DATA.map(q => ({
-                        id: q.id,
-                        question: q.text,
-                        ...(q.subText && { subtext: q.subText }),
-                        selected_options: answers[q.id] || [],
-                    })),
+                    responses: QUIZ_DATA.map(q => {
+                        let responseData: string[] = [];
+                        
+                        if (q.type === 'selection') {
+                            responseData = answers[q.id] || [];
+                        } else if (q.type === 'form') {
+                            responseData = [
+                                `Nome: ${formData.name}`, 
+                                `Telefone: ${formData.phone}`
+                            ];
+                        }
+
+                        return {
+                            id: q.id,
+                            question: q.text,
+                            ...(q.subText && { subtext: q.subText }),
+                            selected_options: responseData,
+                        };
+                    }),
                     submitted_at: new Date().toISOString(),
+                    contact_info: formData // Sending separately as well for easier parsing if needed
                 };
                 
                 const webhookUrl = 'https://editor.leaderaperformance.com.br/webhook/lex-cortinare';
@@ -70,7 +94,18 @@ export default function App() {
     };
 
     const progressPercentage = isQuizCompleted ? 100 : ((currentQuestionIndex + 1) / QUIZ_DATA.length) * 100;
-    const isNextButtonDisabled = selectedOptions.length === 0;
+    
+    let isNextButtonDisabled = true;
+    if (currentQuestion) {
+        if (currentQuestion.type === 'selection') {
+            isNextButtonDisabled = selectedOptions.length === 0;
+        } else if (currentQuestion.type === 'form') {
+            // Check if all defined inputs have values
+            isNextButtonDisabled = currentQuestion.inputs 
+                ? !currentQuestion.inputs.every(input => formData[input.name] && formData[input.name].trim() !== '')
+                : false;
+        }
+    }
 
     return (
         <div className="bg-brand-off-white min-h-screen flex flex-col p-6">
@@ -86,6 +121,8 @@ export default function App() {
                             question={currentQuestion}
                             selectedOptions={selectedOptions}
                             onOptionToggle={handleOptionToggle}
+                            formData={formData}
+                            onFormChange={handleFormChange}
                         />
                     ) : (
                         <ThankYou />
